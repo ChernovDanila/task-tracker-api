@@ -123,3 +123,110 @@ func validateUpdateInput(input UpdateInput) (UpdateInput, error) {
 
 	return input, nil
 }
+
+func (s *Service) CreateWithRecurrence(ctx context.Context, input CreateWithRecurrenceInput) (*taskdomain.Task, error) {
+    
+    if input.Title == "" {
+        return nil, fmt.Errorf("%w: title is required", ErrInvalidInput)
+    }
+    if !input.Recurrence.Type.Valid() {
+        return nil, fmt.Errorf("%w: invalid recurrence type", ErrInvalidInput)
+    }
+
+    recurrence := &taskdomain.Recurrence{
+        Type:      input.Recurrence.Type,
+        Interval:  input.Recurrence.Interval,
+        MonthDays: input.Recurrence.MonthDays,
+        Dates:     input.Recurrence.Dates,
+        Parity:    input.Recurrence.Parity,
+        IsActive:  true,
+        CreatedAt: s.now(),
+    }
+    created, err := s.repo.CreateRecurrence(ctx, recurrence)
+    if err != nil {
+        return nil, err
+    }
+
+    now := s.now()
+    scheduledDate := now
+    task := &taskdomain.Task{
+        Title:         input.Title,
+        Description:   input.Description,
+        Status:        taskdomain.StatusNew,
+        RecurrenceID:  &created.ID,
+        ScheduledDate: &scheduledDate,
+        CreatedAt:     now,
+        UpdatedAt:     now,
+    }
+    return s.repo.Create(ctx, task)
+}
+
+func (s *Service) DeactivateRecurrence(ctx context.Context, id int64) error {
+    if id <= 0 {
+        return fmt.Errorf("%w: id must be positive", ErrInvalidInput)
+    }
+    return s.repo.DeactivateRecurrence(ctx, id)
+}
+
+func (s *Service) GenerateDailyTasks(ctx context.Context) error {
+    recurrences, err := s.repo.GetActiveRecurrences(ctx)
+    if err != nil {
+        return err
+    }
+
+    today := s.now()
+
+    for _, rec := range recurrences {
+        if !s.shouldCreateTask(rec, today) {
+            continue
+        }
+        task := &taskdomain.Task{
+    		Title:         rec.Title,
+    		Description:   rec.Description,
+    		Status:        taskdomain.StatusNew,
+    		RecurrenceID:  &rec.ID,
+    		ScheduledDate: &today,
+    		CreatedAt:     today,
+    		UpdatedAt:     today,
+		}		
+        _, err := s.repo.Create(ctx, task)
+        if err != nil {
+            return err
+        }
+    }
+    return nil
+}
+
+func (s *Service) shouldCreateTask(rec taskdomain.Recurrence, t time.Time) bool {
+    day := t.Day()
+    switch rec.Type {
+    case taskdomain.RecurrenceDaily:
+        if rec.Interval != nil && *rec.Interval > 1 {
+            daysSince := int(t.Sub(rec.CreatedAt).Hours() / 24)
+            return daysSince%*rec.Interval == 0
+        }
+        return true
+    case taskdomain.RecurrenceMonthly:
+        for _, d := range rec.MonthDays {
+            if d == day {
+                return true
+            }
+        }
+    case taskdomain.RecurrenceSpecificDates:
+        for _, d := range rec.Dates {
+            if d.Year() == t.Year() && d.Month() == t.Month() && d.Day() == day {
+                return true
+            }
+        }
+    case taskdomain.RecurrenceParity:
+        if rec.Parity != nil {
+            if *rec.Parity == "even" && day%2 == 0 {
+                return true
+            }
+            if *rec.Parity == "odd" && day%2 != 0 {
+                return true
+            }
+        }
+    }
+    return false
+}
