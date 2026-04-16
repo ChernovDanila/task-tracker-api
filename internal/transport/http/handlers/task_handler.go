@@ -21,12 +21,29 @@ func NewTaskHandler(usecase taskusecase.Usecase) *TaskHandler {
 }
 
 func (h *TaskHandler) Create(w http.ResponseWriter, r *http.Request) {
-	var req taskMutationDTO
+	var req createTaskDTO
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
 
+	// Если передана периодичность — используем другой метод
+	if req.Recurrence != nil {
+		created, err := h.usecase.CreateWithRecurrence(r.Context(), taskusecase.CreateWithRecurrenceInput{
+			Title:       req.Title,
+			Description: req.Description,
+			Status:      req.Status,
+			Recurrence:  recurrenceInputToUsecase(*req.Recurrence),
+		})
+		if err != nil {
+			writeUsecaseError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusCreated, newTaskDTO(created))
+		return
+	}
+
+	// Обычное создание без периодичности
 	created, err := h.usecase.Create(r.Context(), taskusecase.CreateInput{
 		Title:       req.Title,
 		Description: req.Description,
@@ -163,4 +180,19 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 	w.WriteHeader(status)
 
 	_ = json.NewEncoder(w).Encode(payload)
+}
+
+func (h *TaskHandler) DeactivateRecurrence(w http.ResponseWriter, r *http.Request) {
+	id, err := getIDFromRequest(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	if err := h.usecase.DeactivateRecurrence(r.Context(), id); err != nil {
+		writeUsecaseError(w, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }

@@ -31,14 +31,16 @@ const (
 )
 
 type Recurrence struct {
-    ID         int64          `json:"id"`
-    Type       RecurrenceType `json:"type"`
-    Interval   *int           `json:"interval,omitempty"`
-    MonthDays  []int          `json:"month_days,omitempty"`
-    Dates      []time.Time    `json:"dates,omitempty"`
-    Parity     *string        `json:"parity,omitempty"`
-    IsActive   bool           `json:"is_active"`
-    CreatedAt  time.Time      `json:"created_at"`
+    ID          int64          `json:"id"`
+    Title       string         `json:"title"`
+    Description string         `json:"description"`
+    Type        RecurrenceType `json:"type"`
+    Interval    *int           `json:"interval,omitempty"`
+    MonthDays   []int          `json:"month_days,omitempty"`
+    Dates       []time.Time    `json:"dates,omitempty"`
+    Parity      *string        `json:"parity,omitempty"`
+    IsActive    bool           `json:"is_active"`
+    CreatedAt   time.Time      `json:"created_at"`
 }
 
 func (s Status) Valid() bool {
