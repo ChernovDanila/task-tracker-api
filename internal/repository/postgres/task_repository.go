@@ -148,3 +148,80 @@ func scanTask(scanner taskScanner) (*taskdomain.Task, error) {
 
 	return &task, nil
 }
+
+func (r *Repository) CreateRecurrence(ctx context.Context, rec *taskdomain.Recurrence) (*taskdomain.Recurrence, error) {
+    const query = `
+        INSERT INTO task_recurrences (title, description, type, interval, month_days, dates, parity, is_active, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        RETURNING id, title, description, type, interval, month_days, dates, parity, is_active, created_at
+    `
+    row := r.pool.QueryRow(ctx, query,
+        rec.Title,
+        rec.Description,
+        rec.Type,
+        rec.Interval,
+        rec.MonthDays,
+        rec.Dates,
+        rec.Parity,
+        rec.IsActive,
+        rec.CreatedAt,
+    )
+    return scanRecurrence(row)
+}
+
+func (r *Repository) GetActiveRecurrences(ctx context.Context) ([]taskdomain.Recurrence, error) {
+    const query = `
+        SELECT id, title, description, type, interval, month_days, dates, parity, is_active, created_at
+        FROM task_recurrences
+        WHERE is_active = true
+    `
+    rows, err := r.pool.Query(ctx, query)
+    if err != nil {
+        return nil, err
+    }
+    defer rows.Close()
+
+    var result []taskdomain.Recurrence
+    for rows.Next() {
+        rec, err := scanRecurrence(rows)
+        if err != nil {
+            return nil, err
+        }
+        result = append(result, *rec)
+    }
+    return result, rows.Err()
+}
+
+func (r *Repository) DeactivateRecurrence(ctx context.Context, id int64) error {
+    const query = `UPDATE task_recurrences SET is_active = false WHERE id = $1`
+    result, err := r.pool.Exec(ctx, query, id)
+    if err != nil {
+        return err
+    }
+    if result.RowsAffected() == 0 {
+        return taskdomain.ErrNotFound
+    }
+    return nil
+}
+
+func scanRecurrence(scanner taskScanner) (*taskdomain.Recurrence, error) {
+    var rec taskdomain.Recurrence
+    var recType string
+    err := scanner.Scan(
+        &rec.ID,
+        &rec.Title,
+        &rec.Description,
+        &recType,
+        &rec.Interval,
+        &rec.MonthDays,
+        &rec.Dates,
+        &rec.Parity,
+        &rec.IsActive,
+        &rec.CreatedAt,
+    )
+    if err != nil {
+        return nil, err
+    }
+    rec.Type = taskdomain.RecurrenceType(recType)
+    return &rec, nil
+}
